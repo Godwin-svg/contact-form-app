@@ -1,0 +1,307 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Contact Form | AWS S3 + RDS</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --bg: #0b1020;
+        --card: rgba(255, 255, 255, 0.08);
+        --border: rgba(255, 255, 255, 0.16);
+        --text: #edf2ff;
+        --muted: #b6c0df;
+        --primary: #6ea8fe;
+        --primary-strong: #2d7dff;
+        --danger: #ff6b6b;
+        --success: #4dd4ac;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        font-family:
+          Inter,
+          system-ui,
+          -apple-system,
+          Segoe UI,
+          Roboto,
+          sans-serif;
+        color: var(--text);
+        background: radial-gradient(
+          circle at top right,
+          #1b2a57 0%,
+          #0b1020 45%,
+          #090d1a 100%
+        );
+        display: grid;
+        place-items: center;
+        padding: 24px;
+      }
+
+      .shell {
+        width: min(940px, 100%);
+        display: grid;
+        grid-template-columns: 1.1fr 1fr;
+        gap: 24px;
+      }
+
+      .intro,
+      .card {
+        border: 1px solid var(--border);
+        background: var(--card);
+        backdrop-filter: blur(14px);
+        border-radius: 20px;
+      }
+
+      .intro {
+        padding: 28px;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+      }
+
+      .intro h1 {
+        margin: 0 0 14px;
+        font-size: clamp(1.8rem, 3vw, 2.4rem);
+        line-height: 1.15;
+      }
+
+      .intro p {
+        margin: 0;
+        color: var(--muted);
+        line-height: 1.7;
+      }
+
+      .meta {
+        margin-top: 24px;
+        padding: 14px;
+        border-radius: 12px;
+        background: rgba(255, 255, 255, 0.05);
+        font-size: 0.93rem;
+        color: var(--muted);
+      }
+
+      .card {
+        padding: 22px;
+      }
+
+      form {
+        display: grid;
+        gap: 14px;
+      }
+
+      label {
+        display: grid;
+        gap: 8px;
+        font-size: 0.92rem;
+        color: var(--muted);
+      }
+
+      input,
+      textarea {
+        width: 100%;
+        border-radius: 12px;
+        border: 1px solid transparent;
+        padding: 12px 13px;
+        color: var(--text);
+        background: rgba(255, 255, 255, 0.08);
+        outline: none;
+        transition:
+          border-color 0.2s ease,
+          background 0.2s ease;
+      }
+
+      input:focus,
+      textarea:focus {
+        border-color: var(--primary);
+        background: rgba(255, 255, 255, 0.12);
+      }
+
+      textarea {
+        min-height: 130px;
+        resize: vertical;
+      }
+
+      .grid-2 {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 14px;
+      }
+
+      button {
+        border: 0;
+        border-radius: 12px;
+        padding: 12px 16px;
+        font-weight: 600;
+        color: white;
+        background: linear-gradient(
+          100deg,
+          var(--primary),
+          var(--primary-strong)
+        );
+        cursor: pointer;
+        transition:
+          transform 0.2s ease,
+          filter 0.2s ease;
+      }
+
+      button:hover {
+        transform: translateY(-1px);
+        filter: brightness(1.04);
+      }
+
+      button:disabled {
+        opacity: 0.75;
+        cursor: wait;
+      }
+
+      .status {
+        min-height: 22px;
+        font-size: 0.9rem;
+      }
+
+      .status.error {
+        color: var(--danger);
+      }
+
+      .status.success {
+        color: var(--success);
+      }
+
+      @media (max-width: 860px) {
+        .shell {
+          grid-template-columns: 1fr;
+        }
+
+        .grid-2 {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="shell">
+      <section class="intro">
+        <div>
+          <h1>Let’s Talk</h1>
+          <p>
+            Send your inquiry with an optional attachment. Your message is
+            securely stored in Amazon RDS, and uploaded files are saved in
+            Amazon S3.
+          </p>
+        </div>
+        <div class="meta">Built with Node.js, AWS SDK v3, S3, and RDS.</div>
+      </section>
+
+      <section class="card">
+        <form id="contactForm" enctype="multipart/form-data">
+          <div class="grid-2">
+            <label>
+              Full name
+              <input
+                type="text"
+                name="fullName"
+                placeholder="e.g., Jane Doe"
+                required
+              />
+            </label>
+            <label>
+              Email
+              <input
+                type="email"
+                name="email"
+                placeholder="you@example.com"
+                required
+              />
+            </label>
+          </div>
+
+          <label>
+            Subject
+            <input
+              type="text"
+              name="subject"
+              placeholder="How can we help?"
+              required
+            />
+          </label>
+
+          <label>
+            Message
+            <textarea
+              name="message"
+              placeholder="Write your message here..."
+              required
+            ></textarea>
+          </label>
+
+          <label>
+            Attachment (optional)
+            <input type="file" name="attachment" />
+          </label>
+
+          <button type="submit" id="submitButton">Submit</button>
+          <div
+            id="status"
+            class="status"
+            role="status"
+            aria-live="polite"
+          ></div>
+        </form>
+      </section>
+    </main>
+
+    <script>
+      const form = document.getElementById("contactForm");
+      const statusEl = document.getElementById("status");
+      const submitButton = document.getElementById("submitButton");
+
+      function setStatus(text, type) {
+        statusEl.textContent = text;
+        statusEl.className = `status ${type || ""}`;
+      }
+
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+
+        setStatus("Submitting your message...", "");
+        submitButton.disabled = true;
+
+        try {
+          const formData = new FormData(form);
+          const response = await fetch("/api/contact", {
+            method: "POST",
+            body: formData,
+          });
+
+          const payload = await response.json();
+
+          if (!response.ok || !payload.ok) {
+            throw new Error(payload.message || "Submission failed");
+          }
+
+          form.reset();
+          setStatus("Message sent successfully.", "success");
+        } catch (error) {
+          setStatus(
+            error.message || "Something went wrong. Please try again.",
+            "error",
+          );
+        } finally {
+          submitButton.disabled = false;
+        }
+      });
+    </script>
+  </body>
+</html>
