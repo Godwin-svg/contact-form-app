@@ -948,6 +948,323 @@ curl http://localhost:3000/api/health
 
 **═══════════════════════════════════════════════════════════════════════════════**
 
+## **Alternative: Running with Docker**
+
+### **Why Docker?**
+
+Docker provides:
+
+- ✅ **Complete isolation** - Container has its own environment
+- ✅ **Reproducibility** - Same image works anywhere
+- ✅ **Portability** - Easy to move between environments
+- ✅ **Resource limits** - Control CPU and memory usage
+- ✅ **No "works on my machine"** - Consistent across all deployments
+
+### **Prerequisites**
+
+```bash
+# SSH to EC2 first
+sudo dnf install docker -y
+sudo systemctl start docker
+sudo systemctl enable docker
+sudo usermod -aG docker ec2-user
+newgrp docker
+```
+
+### **Building the Docker Image**
+
+```bash
+# Navigate to application directory
+cd contact-form-app
+
+# Build the image (tagged as version 1.0)
+docker build -t nodeapp:1.0 .
+
+# Verify image was created
+docker images | grep nodeapp
+```
+
+**What happens during build:**
+
+1. Downloads Node.js 18 Alpine base image (~40MB)
+2. Copies package.json and installs dependencies
+3. Copies application code
+4. Creates non-root user for security
+5. Sets up health check
+6. Configures startup command
+
+**Total build time:** ~2-5 minutes (first time), ~30 seconds (subsequent builds with cache)
+
+### **Running the Container**
+
+⚠️ **Important:** If PM2 is running, stop it first (can't have both on port 3000):
+
+```bash
+# Check if PM2 is running
+pm2 status
+
+# If PM2 is running, stop it
+pm2 stop contact-form
+pm2 delete contact-form
+```
+
+**Start the container:**
+
+```bash
+docker run -d \
+  -p 3000:3000 \
+  --restart unless-stopped \
+  --name nodeapp \
+  nodeapp:1.0
+```
+
+**Flag explanations:**
+
+- `-d` = Run in background (detached mode)
+- `-p 3000:3000` = Map container port 3000 to host port 3000
+- `--restart unless-stopped` = Auto-restart on crash or Docker restart
+- `--name nodeapp` = Give container a friendly name
+- `nodeapp:1.0` = Image name and tag
+
+### **Verifying Docker Deployment**
+
+```bash
+# Check container status
+docker ps
+
+# Should show:
+# CONTAINER ID   IMAGE         STATUS                    PORTS                    NAMES
+# 92c5ffab6d6f   nodeapp:1.0   Up 5 minutes (healthy)    0.0.0.0:3000->3000/tcp   nodeapp
+
+# Test health check locally
+curl http://localhost:3000/api/health
+
+# Expected: {"ok":true,"message":"Service is healthy"}
+
+# View startup logs
+docker logs nodeapp
+
+# Follow logs in real-time (CTRL+C to exit)
+docker logs -f nodeapp
+```
+
+### **Viewing Application Logs**
+
+**After deployment, to see request logs:**
+
+```bash
+# Follow logs in real-time (recommended during testing)
+docker logs -f nodeapp
+
+# Then submit a form from the frontend
+# You'll see detailed logs:
+# 📨 [POST /api/contact] Request received
+# 📋 Form data: {...}
+# 📤 Uploading file to S3: ...
+# ✅ File uploaded successfully
+# 💾 Saving to database...
+# ✅ Saved to database with ID: 42
+# 🎉 Contact form submission completed successfully
+```
+
+**Other useful log commands:**
+
+```bash
+# View last 50 lines
+docker logs --tail 50 nodeapp
+
+# View logs with timestamps
+docker logs -t nodeapp
+
+# View logs since 1 hour ago
+docker logs --since 1h nodeapp
+```
+
+### **Managing the Container**
+
+```bash
+# Stop container (keeps it for later)
+docker stop nodeapp
+
+# Start stopped container
+docker start nodeapp
+
+# Restart container (useful after pulling code changes)
+docker restart nodeapp
+
+# View container details
+docker inspect nodeapp
+
+# View resource usage (CPU, memory)
+docker stats nodeapp
+
+# Execute command inside running container
+docker exec -it nodeapp sh
+
+# Remove container (must stop first)
+docker stop nodeapp
+docker rm nodeapp
+```
+
+### **Updating Application Code**
+
+When you make changes and push to GitHub:
+
+```bash
+# SSH to EC2
+cd contact-form-app
+
+# Pull latest code
+git pull origin main
+
+# Rebuild image
+docker build -t nodeapp:1.0 .
+
+# Stop and remove old container
+docker stop nodeapp
+docker rm nodeapp
+
+# Start new container with updated code
+docker run -d \
+  -p 3000:3000 \
+  --restart unless-stopped \
+  --name nodeapp \
+  nodeapp:1.0
+
+# Verify new container is running
+docker ps
+docker logs nodeapp
+```
+
+### **Configure Auto-Start on EC2 Reboot**
+
+```bash
+# Enable Docker to start on boot
+sudo systemctl enable docker
+
+# Verify it's enabled
+sudo systemctl is-enabled docker
+# Should output: enabled
+```
+
+**What this ensures:**
+
+- EC2 reboots → systemd starts Docker daemon → Docker starts your container (because of `--restart unless-stopped`)
+- No manual intervention needed after EC2 maintenance or reboots
+
+### **Troubleshooting Docker Issues**
+
+**Container not starting:**
+
+```bash
+# Check logs for errors
+docker logs nodeapp
+
+# Common issues:
+# - IAM permissions missing → Check EC2 role
+# - Parameter Store values incorrect → Verify in AWS Console
+# - Port already in use → Stop PM2 first
+```
+
+**Port already in use error:**
+
+```bash
+# Check what's using port 3000
+sudo lsof -i :3000
+
+# If PM2 is running:
+pm2 stop contact-form
+pm2 delete contact-form
+
+# Then try docker run again
+```
+
+**Container keeps restarting:**
+
+```bash
+# Check why it's failing
+docker logs nodeapp
+
+# View last restart events
+docker inspect nodeapp | grep -A 10 "State"
+```
+
+**Can't connect to database:**
+
+```bash
+# Verify RDS security group allows EC2
+# Check database endpoint in Parameter Store
+# Test connection from inside container:
+docker exec nodeapp sh
+# Inside container:
+nc -zv <rds-endpoint> 3306
+```
+
+### **Docker vs PM2 Comparison**
+
+| Feature              | PM2                    | Docker                      |
+| -------------------- | ---------------------- | --------------------------- |
+| **Isolation**        | No (uses host OS)      | Yes (containerized)         |
+| **Portability**      | Node.js specific       | Works anywhere Docker runs  |
+| **Auto-restart**     | ✅ Yes                 | ✅ Yes                      |
+| **Resource limits**  | Limited                | Full control (CPU, memory)  |
+| **Setup complexity** | Simple                 | Moderate                    |
+| **Log management**   | Built-in               | Docker logs                 |
+| **Zero-downtime**    | `pm2 reload`           | Need orchestration (K8s)    |
+| **Best for**         | Single server, Node.js | Multi-service, any language |
+
+**When to use PM2:**
+
+- Simple single-server deployment
+- Node.js only
+- Quick setup needed
+- Zero-downtime reload important
+
+**When to use Docker:**
+
+- Need isolation
+- Multiple services/languages
+- Planning to scale to ECS/EKS
+- Environment consistency critical
+
+### **Security Features in Docker Setup**
+
+The Dockerfile includes several security best practices:
+
+1. **Non-root user:**
+
+   ```dockerfile
+   RUN adduser -S nodejs -u 1001
+   USER nodejs
+   ```
+
+   App runs as `nodejs` user, not root
+
+2. **Alpine Linux base:**
+   - Smaller attack surface
+   - Fewer vulnerabilities
+   - ~40MB vs ~200MB for standard images
+
+3. **Multi-stage build:**
+   - Build dependencies not in final image
+   - Smaller final image size
+   - Less to potentially exploit
+
+4. **Health checks:**
+
+   ```dockerfile
+   HEALTHCHECK --interval=30s --timeout=3s
+   ```
+
+   Docker monitors app health automatically
+
+5. **Signal handling:**
+   - `dumb-init` ensures graceful shutdown
+   - Proper SIGTERM handling
+   - No zombie processes
+
+**═══════════════════════════════════════════════════════════════════════════════**
+
 ## **Deployment Complete Checklist**
 
 ✅ All AWS resources created (VPC, Security Groups, RDS, S3, ALB, EC2)  
@@ -957,15 +1274,21 @@ curl http://localhost:3000/api/health
 ✅ Custom domain configured with SSL certificate  
 ✅ HTTPS listener added to ALB  
 ✅ Frontend updated to use HTTPS custom domain  
-✅ Application running with PM2  
-✅ **PM2 auto-start configured** (`pm2 save` + `pm2 startup`)  
-✅ ALB health checks passing  
-✅ Form submissions working end-to-end
+✅ **Application running** (choose one):
+
+- **Option A:** PM2 with `pm2 save` + `pm2 startup` configured
+- **Option B:** Docker with `--restart unless-stopped` + `systemctl enable docker`
+  ✅ ALB health checks passing  
+  ✅ Form submissions working end-to-end  
+  ✅ Request logging implemented and visible
 
 **Test your deployment:**
 
-1. Open frontend URL (Amplify)
+1. Open frontend URL: `https://frontend-contact-form.godwintechservices.com/`
 2. Fill and submit contact form
 3. Check for "Message sent successfully"
 4. Verify file appears in S3 bucket
 5. Verify data saved in RDS database
+6. Monitor logs:
+   - **PM2:** `pm2 logs contact-form -f`
+   - **Docker:** `docker logs -f nodeapp`
