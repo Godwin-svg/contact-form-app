@@ -253,9 +253,19 @@ async function startServer() {
   }
 
   // Setup middleware
+  // Enable CORS for Amplify frontend
+  app.use((req, res, next) => {
+    res.header("Access-Control-Allow-Origin", "*");
+    res.header("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+    res.header("Access-Control-Allow-Headers", "Content-Type");
+    if (req.method === "OPTIONS") {
+      return res.sendStatus(200);
+    }
+    next();
+  });
   app.use(express.json());
   app.use(express.urlencoded({ extended: true }));
-  app.use(express.static(path.join(__dirname, "public")));
+  // Removed static file serving - frontend hosted on Amplify
 
   // Health check endpoint
   app.get("/api/health", async (_req, res) => {
@@ -344,11 +354,7 @@ async function startServer() {
     }
   });
 
-  // Serve frontend for all other routes
-  app.get("*", (_req, res) => {
-    res.sendFile(path.join(__dirname, "public", "index.html"));
-  });
-
+  // API-only server (frontend hosted on Amplify)
   app.listen(port, () => {
     console.log(`Server running on http://localhost:${port}`);
   });
