@@ -362,6 +362,9 @@ You need to create **4 Security Groups** for proper network isolation:
 - ✅ Use **simple names/values** (e.g., `my-bucket-name`, not ARNs)
 - ✅ Parameter names are **case-sensitive**
 - ✅ Create in the **same region** as your EC2 instance
+- ⚠️ **Watch out for trailing spaces!** Highlight all text in the value field to check for invisible spaces at the end
+- ⚠️ **Double-check spelling** - typos will cause runtime errors (e.g., `allas/aws/ssm` instead of `alias/aws/ssm`)
+- ⚠️ **KMS is optional** - if you don't need custom encryption, skip `/contact-form/KMS_KEY_ID` entirely
 
 **Quick Reference - What Values Go Where:**
 
@@ -717,3 +720,247 @@ DEMO_MODE=true npm start
 ```
 
 This skips all AWS API calls and just serves the frontend.
+
+**═══════════════════════════════════════════════════════════════════════════════**
+
+## **Important: HTTPS Requirement for Amplify**
+
+### **Problem:**
+
+If you deploy the frontend to AWS Amplify (which serves over HTTPS), your API must also use HTTPS. Modern browsers block "mixed content" (HTTPS page calling HTTP API).
+
+### **Solution: Custom Domain with SSL**
+
+**You cannot use the default ALB URL (`http://contact-form-alb-xxxx.elb.amazonaws.com`) from Amplify.**
+
+**Required steps:**
+
+1. **Get a custom domain** (e.g., `godwintechservices.com`)
+
+2. **Request SSL certificate in AWS Certificate Manager (ACM):**
+   - Go to ACM → Request certificate
+   - Enter your domain (e.g., `backend-contact-form.godwintechservices.com`)
+   - Choose DNS validation
+   - Add CNAME record to your DNS provider to validate
+
+3. **Add HTTPS listener to ALB:**
+   - Go to EC2 → Load Balancers → Your ALB
+   - Add listener: HTTPS (443)
+   - Select your ACM certificate
+   - Forward to same target group (EC2 on port 3000)
+
+4. **Configure DNS:**
+   - In Route 53 or your DNS provider
+   - Create A record (or CNAME) pointing to your ALB
+   - Example: `backend-contact-form.godwintechservices.com` → ALB DNS
+
+5. **Update frontend:**
+   - In `public/index.html`, change API endpoint to use your custom domain:
+   ```javascript
+   fetch("https://backend-contact-form.godwintechservices.com/api/contact", ...)
+   ```
+
+   - Commit and push to trigger Amplify redeployment
+
+**Result:** Frontend (HTTPS) can now safely call backend (HTTPS) ✅
+
+**═══════════════════════════════════════════════════════════════════════════════**
+
+## **Common Deployment Issues**
+
+### **Issue 1: Trailing Spaces in Parameter Store**
+
+**Error:** `InvalidBucketName: The specified bucket is not valid`
+**Cause:** Parameter value has invisible trailing space (e.g., `my-bucket ` instead of `my-bucket`)
+**Fix:** Edit parameter, highlight all text to see trailing space, remove it, save, restart app
+
+### **Issue 2: KMS Key Typos**
+
+**Error:** `KMS.NotFoundException: Invalid keyId`  
+**Cause:** Typo in KMS parameter (e.g., `allas/aws/ssm` instead of `alias/aws/ssm`)
+**Fix:** Either fix the typo, or delete the parameter (KMS is optional)
+
+### **Issue 3: IAM Permissions Missing**
+
+**Error:** `User is not authorized to perform: ssm:GetParameters`  
+**Cause:** EC2 IAM role doesn't have required permissions
+**Fix:** Add inline policy to the role with `ssm:GetParameters`, `secretsmanager:GetSecretValue`, `s3:PutObject`
+
+### **Issue 4: App Cached Old Config**
+
+**Symptom:** Fixed Parameter Store value but error persists  
+**Cause:** Application reads parameters at startup and caches them
+**Fix:** Restart the application after any Parameter Store changes:
+
+```bash
+pm2 restart contact-form
+```
+
+**═══════════════════════════════════════════════════════════════════════════════**
+
+## **Starting Your Server with PM2**
+
+### **Why Use PM2?**
+
+PM2 is a **production process manager** that ensures your Node.js application:
+- ✅ Keeps running after you logout (daemonization)
+- ✅ Auto-restarts if it crashes (supervision)
+- ✅ Starts automatically after EC2 reboot (persistence)
+- ✅ Manages logs centrally (log aggregation)
+- ✅ Enables zero-downtime deployments (reload)
+
+### **Starting the Server (First Time)**
+
+```bash
+# SSH to your EC2 instance first
+cd contact-form-app
+
+# Start your application with PM2
+pm2 start server.js --name contact-form
+```
+
+**Expected output:**
+```
+[PM2] Starting /home/ec2-user/contact-form-app/server.js in fork_mode (1 instance)
+[PM2] Done.
+┌────┬─────────────────┬─────────────┬─────────┬─────────┬──────────┬────────┬──────┬───────────┬──────────┬──────────┬──────────┬──────────┐
+│ id │ name            │ namespace   │ version │ mode    │ pid      │ uptime │ ↺    │ status    │ cpu      │ mem      │ user     │ watching │
+├────┼─────────────────┼─────────────┼─────────┼─────────┼──────────┼────────┼──────┼───────────┼──────────┼──────────┼──────────┼──────────┤
+│ 0  │ contact-form    │ default     │ 1.0.0   │ fork    │ 3227     │ 0s     │ 0    │ online    │ 0%       │ 17.3mb   │ ec2-user │ disabled │
+└────┴─────────────────┴─────────────┴─────────┴─────────┴──────────┴────────┴──────┴───────────┴──────────┴──────────┴──────────┴──────────┘
+```
+
+**Key columns to check:**
+- **status**: Should be `online` (✅ running)
+- **pid**: Process ID assigned by Linux
+- **↺**: Restart count (0 = no crashes yet)
+- **uptime**: How long it's been running
+
+### **Configure Auto-Start on Reboot (Critical!)**
+
+Without this, your server will stop after EC2 reboots:
+
+```bash
+# Save current PM2 process list
+pm2 save
+
+# Generate systemd startup script
+pm2 startup
+
+# Copy and run the sudo command it outputs (looks like this):
+sudo env PATH=$PATH:/usr/bin pm2 startup systemd -u ec2-user --hp /home/ec2-user
+```
+
+**What this does:**
+- Creates a systemd service that starts PM2 on boot
+- PM2 automatically resurrects all saved processes
+- Your server survives EC2 restarts without manual intervention ✅
+
+### **Common PM2 Commands**
+
+```bash
+# View all running applications
+pm2 status
+
+# View real-time logs
+pm2 logs contact-form
+
+# View last 50 log lines
+pm2 logs contact-form --lines 50
+
+# Restart after code changes
+pm2 restart contact-form
+
+# Stop the application
+pm2 stop contact-form
+
+# Remove from PM2
+pm2 delete contact-form
+
+# Monitor CPU and memory usage
+pm2 monit
+```
+
+### **After Deployment Changes**
+
+When you update Parameter Store values or pull new code:
+
+```bash
+# SSH to EC2
+cd contact-form-app
+
+# Pull latest code (if you made changes)
+git pull origin main
+
+# Restart the application
+pm2 restart contact-form
+
+# Verify it's running
+pm2 status
+
+# Check logs for errors
+pm2 logs contact-form --lines 20
+```
+
+### **How Server Startup Works**
+
+```
+1. PM2 starts → Forks node process
+                  ↓
+2. Node.js reads server.js → Loads dependencies (Express, AWS SDK)
+                  ↓
+3. Application init → Fetches config from Parameter Store/Secrets Manager
+                  ↓
+4. Database setup → Connects to RDS MySQL
+                  ↓
+5. Express starts → Binds to port 3000
+                  ↓
+6. Server ready → ALB health checks succeed ✅
+```
+
+**Total startup time:** ~3-5 seconds
+
+### **Troubleshooting Startup Issues**
+
+```bash
+# Check if process is running
+pm2 status
+
+# If status is "errored" or "stopped", check logs
+pm2 logs contact-form --lines 50
+
+# Common errors:
+# - IAM permissions missing → Check EC2 role has ssm:GetParameters
+# - Parameter Store values wrong → Check for typos/trailing spaces
+# - Port already in use → Kill old process or restart EC2
+
+# Test local health check
+curl http://localhost:3000/api/health
+
+# Should return:
+# {"ok":true,"message":"Service is healthy"}
+```
+
+**═══════════════════════════════════════════════════════════════════════════════**
+
+## **Deployment Complete Checklist**
+
+✅ All AWS resources created (VPC, Security Groups, RDS, S3, ALB, EC2)  
+✅ Parameter Store values configured (6 required, no trailing spaces)  
+✅ Secrets Manager secret created  
+✅ IAM role attached to EC2 with correct permissions  
+✅ Custom domain configured with SSL certificate  
+✅ HTTPS listener added to ALB  
+✅ Frontend updated to use HTTPS custom domain  
+✅ Application running with PM2  
+✅ **PM2 auto-start configured** (`pm2 save` + `pm2 startup`)  
+✅ ALB health checks passing  
+✅ Form submissions working end-to-end
+
+**Test your deployment:**
+
+1. Open frontend URL (Amplify)
+2. Fill and submit contact form
+3. Check for "Message sent successfully"
+4. Verify file appears in S3 bucket
+5. Verify data saved in RDS database
