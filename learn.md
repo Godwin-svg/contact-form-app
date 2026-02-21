@@ -756,6 +756,7 @@ If you deploy the frontend to AWS Amplify (which serves over HTTPS), your API mu
 
 5. **Update frontend:**
    - In `public/index.html`, change API endpoint to use your custom domain:
+
    ```javascript
    fetch("https://backend-contact-form.godwintechservices.com/api/contact", ...)
    ```
@@ -803,6 +804,7 @@ pm2 restart contact-form
 ### **Why Use PM2?**
 
 PM2 is a **production process manager** that ensures your Node.js application:
+
 - ✅ Keeps running after you logout (daemonization)
 - ✅ Auto-restarts if it crashes (supervision)
 - ✅ Starts automatically after EC2 reboot (persistence)
@@ -820,6 +822,7 @@ pm2 start server.js --name contact-form
 ```
 
 **Expected output:**
+
 ```
 [PM2] Starting /home/ec2-user/contact-form-app/server.js in fork_mode (1 instance)
 [PM2] Done.
@@ -831,6 +834,7 @@ pm2 start server.js --name contact-form
 ```
 
 **Key columns to check:**
+
 - **status**: Should be `online` (✅ running)
 - **pid**: Process ID assigned by Linux
 - **↺**: Restart count (0 = no crashes yet)
@@ -852,6 +856,7 @@ sudo env PATH=$PATH:/usr/bin pm2 startup systemd -u ec2-user --hp /home/ec2-user
 ```
 
 **What this does:**
+
 - Creates a systemd service that starts PM2 on boot
 - PM2 automatically resurrects all saved processes
 - Your server survives EC2 restarts without manual intervention ✅

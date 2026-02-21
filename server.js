@@ -269,10 +269,13 @@ async function startServer() {
 
   // Health check endpoint
   app.get("/api/health", async (_req, res) => {
+    console.log("🏥 [GET /api/health] Health check requested");
     try {
       await dbPool.query("SELECT 1");
+      console.log("✅ Health check passed");
       res.json({ ok: true, message: "Service is healthy" });
     } catch (error) {
+      console.error("❌ Health check failed:", error.message);
       res.status(500).json({
         ok: false,
         message: "Database connection failed",
@@ -283,10 +286,20 @@ async function startServer() {
 
   // Contact form submission endpoint
   app.post("/api/contact", upload.single("attachment"), async (req, res) => {
+    console.log("📨 [POST /api/contact] Request received");
+    console.log("📋 Form data:", {
+      fullName: req.body.fullName,
+      email: req.body.email,
+      subject: req.body.subject,
+      hasFile: !!req.file,
+      fileName: req.file?.originalname,
+    });
+
     try {
       const { fullName, email, subject, message } = req.body;
 
       if (!fullName || !email || !subject || !message) {
+        console.log("❌ Validation failed: Missing required fields");
         return res.status(400).json({
           ok: false,
           message: "Please provide full name, email, subject, and message.",
@@ -301,6 +314,7 @@ async function startServer() {
 
       if (req.file) {
         fileKey = buildS3ObjectKey(req.file.originalname);
+        console.log(`📤 Uploading file to S3: ${fileKey}`);
 
         // Build S3 upload command with optional KMS encryption
         const uploadParams = {
@@ -319,9 +333,11 @@ async function startServer() {
         await s3Client.send(new PutObjectCommand(uploadParams));
 
         fileUrl = `https://${config.s3BucketName}.s3.${config.awsRegion}.amazonaws.com/${fileKey}`;
+        console.log(`✅ File uploaded successfully: ${fileUrl}`);
       }
 
       // Save to database
+      console.log("💾 Saving to database...");
       const insertSql = `
         INSERT INTO contact_submissions (full_name, email, subject, message, file_url, file_key)
         VALUES (?, ?, ?, ?, ?, ?)
@@ -336,6 +352,9 @@ async function startServer() {
         fileKey,
       ]);
 
+      console.log(`✅ Saved to database with ID: ${result.insertId}`);
+      console.log("🎉 Contact form submission completed successfully");
+
       return res.status(201).json({
         ok: true,
         message: "Contact form submitted successfully.",
@@ -345,7 +364,7 @@ async function startServer() {
         },
       });
     } catch (error) {
-      console.error("Submission error:", error);
+      console.error("❌ Submission error:", error);
       return res.status(500).json({
         ok: false,
         message: "Could not submit contact form. Please try again.",

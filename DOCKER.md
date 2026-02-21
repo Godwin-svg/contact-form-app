@@ -103,17 +103,21 @@ FROM node:18-alpine
 ### **Security Features**
 
 1. **Non-root user**:
+
    ```dockerfile
    RUN adduser -S nodejs -u 1001
    USER nodejs
    ```
+
    - App runs as `nodejs` user (not root) for security
    - UID 1001 for consistent permissions
 
 2. **dumb-init**:
+
    ```dockerfile
    ENTRYPOINT ["dumb-init", "--"]
    ```
+
    - Handles signals properly (SIGTERM, SIGINT)
    - Ensures graceful shutdown
    - Prevents zombie processes
@@ -122,6 +126,7 @@ FROM node:18-alpine
    ```dockerfile
    HEALTHCHECK --interval=30s --timeout=3s
    ```
+
    - Docker monitors app health automatically
    - Calls `/api/health` endpoint every 30 seconds
    - Marks container unhealthy if check fails
@@ -307,11 +312,13 @@ docker-compose ps
 ### **Recommendation**
 
 **For your current setup:** Stick with PM2
+
 - Single EC2 instance
 - Simple deployment
 - Working well already
 
 **Switch to Docker when:**
+
 - You need to deploy to ECS/EKS
 - You have multiple microservices
 - You want container orchestration
@@ -401,6 +408,7 @@ docker exec contact-form wget -O- http://localhost:3000/api/health
 ## **Best Practices**
 
 1. **Tag your images** with version numbers:
+
    ```bash
    docker build -t contact-form-app:1.0.0 .
    docker build -t contact-form-app:latest .
@@ -409,6 +417,7 @@ docker exec contact-form wget -O- http://localhost:3000/api/health
 2. **Use `.dockerignore`** to exclude unnecessary files (already created)
 
 3. **Set resource limits** to prevent container from consuming all resources:
+
    ```bash
    docker run -d \
      --name contact-form \
@@ -419,19 +428,21 @@ docker exec contact-form wget -O- http://localhost:3000/api/health
    ```
 
 4. **Monitor container health**:
+
    ```bash
    # Set up health check monitoring
    docker events --filter 'event=health_status'
    ```
 
 5. **Regular cleanup**:
+
    ```bash
    # Remove unused images
    docker image prune -a
-   
+
    # Remove stopped containers
    docker container prune
-   
+
    # Remove everything unused
    docker system prune -a
    ```
