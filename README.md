@@ -1,117 +1,298 @@
-# Contact Form App (Node.js + AWS S3 + RDS)
+# Contact Form Application with AWS Integration
 
-A modern contact form application built with Node.js and Express.
+A full-stack contact form application built with Node.js and Express, featuring file uploads to S3, data persistence in RDS MySQL, and configuration management through AWS Parameter Store and Secrets Manager.
 
-- File uploads are stored in Amazon S3 using AWS SDK v3.
-- Contact data is stored in Amazon RDS (MySQL engine).
-- The table is created automatically on the first successful form submission (no manual table creation required).
-- Configuration is loaded from AWS Systems Manager Parameter Store, with DB password retrieved from AWS Secrets Manager (no `.env` file needed).
-- AWS region is auto-detected from EC2 metadata when deployed, with `us-east-1` as fallback.
+## Architecture
 
-## Tech Stack
+```
+Frontend (AWS Amplify) - Auto-deploys on git push
+    ↓ HTTPS
+Custom Domain + SSL
+    ↓
+Application Load Balancer
+    ↓ Port 3000
+EC2 Instance (Docker)
+    ↓
+    ├─→ S3 (File Storage)
+    └─→ RDS MySQL (Data Storage)
+```
 
-- Node.js + Express
-- AWS SDK v3 (`@aws-sdk/client-s3`, `@aws-sdk/client-ssm`, `@aws-sdk/client-secrets-manager`) pinned to `3.990.0`
-- Amazon RDS MySQL (`mysql2`)
-- Multer (multipart file uploads)
-- Modern responsive frontend (HTML/CSS/JS)
+**Frontend:** Built and hosted on AWS Amplify, which automatically deploys the latest code from the repository whenever changes are pushed to the main branch.
 
-## 1) Install Dependencies
+## Features
+
+- Contact form with file upload capability
+- Secure credential management (AWS Secrets Manager)
+- File storage in S3 with organized folder structure
+- Data persistence in RDS MySQL database
+- Health check endpoint for monitoring
+- Containerized deployment with Docker
+- HTTPS with custom domain and SSL certificate
+- Comprehensive request logging
+
+## Technologies
+
+**Backend:**
+
+- Node.js v18.x
+- Express.js
+- AWS SDK v3 (S3, Secrets Manager, Parameter Store)
+- MySQL2
+- Multer (file upload handling)
+
+**Infrastructure:**
+
+- AWS EC2 (Amazon Linux 2023)
+- AWS RDS (MySQL)
+- AWS S3
+- AWS Application Load Balancer
+- AWS Systems Manager (Parameter Store)
+- AWS Secrets Manager
+- AWS Amplify (Frontend hosting with automatic deployment)
+- Docker
+
+**Deployment:**
+
+- Docker with multi-stage builds
+- Alpine Linux base image
+- Non-root user for security
+- Health checks integrated
+
+## Prerequisites
+
+- AWS Account
+- Domain name (for custom HTTPS endpoint)
+- AWS CLI configured
+- Docker (for containerized deployment)
+- Git
+
+## Deployment Steps
+
+### 1. AWS Resources Setup
+
+Create the following AWS resources:
+
+- **VPC** with public and private subnets
+- **RDS MySQL** database in private subnet
+- **S3 bucket** for file uploads
+- **Application Load Balancer** with SSL certificate
+- **EC2 instance** (Amazon Linux 2023) with IAM role
+- **Parameter Store** values for configuration
+- **Secrets Manager** secret for database password
+
+### 2. IAM Permissions
+
+Attach IAM policy to EC2 role with permissions:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "ssm:GetParameters",
+        "secretsmanager:GetSecretValue",
+        "s3:PutObject"
+      ],
+      "Resource": [
+        "arn:aws:ssm:*:*:parameter/contact-form/*",
+        "arn:aws:secretsmanager:*:*:secret:your-secret-name",
+        "arn:aws:s3:::your-bucket-name/*"
+      ]
+    }
+  ]
+}
+```
+
+### 3. Configure Parameter Store
+
+Create parameters under `/contact-form/`:
+
+- `S3_BUCKET_NAME`
+- `RDS_HOST`
+- `RDS_PORT`
+- `RDS_USER`
+- `RDS_PASSWORD_SECRET_ID`
+- `RDS_DATABASE`
+- `MAX_FILE_SIZE_BYTES`
+
+### 4. Deploy Application on EC2
 
 ```bash
+# Install required packages
+sudo dnf install git docker -y
+sudo systemctl start docker
+sudo systemctl enable docker
+sudo usermod -aG docker ec2-user
+
+# Clone repository
+git clone https://github.com/Godwin-svg/contact-form-app.git
+cd contact-form-app
+
+# Install dependencies
 npm install
+
+# Build Docker image
+docker build -t nodeapp:1.0 .
+
+# Run container
+docker run -d \
+  -p 3000:3000 \
+  --restart unless-stopped \
+  --name nodeapp \
+  nodeapp:1.0
 ```
 
-## 2) Local Development (Demo Mode)
+### 5. Deploy Frontend on Amplify
 
-To test the UI locally without AWS configuration:
+- Connect GitHub repository to AWS Amplify
+- Amplify automatically builds and deploys on every git push
+- Configure custom domain for frontend (optional)
+- Update API endpoint in `public/index.html` to backend custom domain
+
+### 6. Configure Backend Custom Domain
+
+- Request SSL certificate in AWS Certificate Manager
+- Add HTTPS listener to ALB with certificate
+- Configure DNS (Route 53 or external) to point to ALB
+
+### 7. Verify Deployment
 
 ```bash
-DEMO_MODE=true npm start
+# Check container status
+docker ps
+
+# Test backend health endpoint
+curl http://localhost:3000/api/health
+
+# Test via custom domain
+curl https://your-backend-domain.com/api/health
+
+# Frontend automatically available at Amplify URL
+# Any git push to main branch triggers automatic redeployment
 ```
 
-This will start the server with the frontend only. API endpoints will return demo messages.
+## Testing
 
-## 3) Configure AWS Parameter Store
+1. Open frontend URL
+2. Fill out contact form with all fields
+3. Attach a file (optional)
+4. Submit form
+5. Verify success message appears
+6. Check S3 bucket for uploaded file
+7. Check RDS database for form submission record
 
-Create the following parameters in SSM Parameter Store:
+**Expected Response:**
 
-- `/contact-form/S3_BUCKET_NAME`
-- `/contact-form/RDS_HOST`
-- `/contact-form/RDS_PORT`
-- `/contact-form/RDS_USER`
-- `/contact-form/RDS_PASSWORD_SECRET_ID` (Secret ID or ARN in Secrets Manager)
-- `/contact-form/RDS_DATABASE`
-- `/contact-form/KMS_KEY_ID` (optional - KMS key for S3 file encryption)
-- `/contact-form/MAX_FILE_SIZE_BYTES` (optional)
+```json
+{
+  "ok": true,
+  "message": "Contact form submitted successfully.",
+  "data": {
+    "id": 1,
+    "fileUrl": "https://bucket.s3.region.amazonaws.com/path/to/file"
+  }
+}
+```
 
-**Important:** Store the actual DB password in AWS Secrets Manager. The secret value can be either:
+## Monitoring
 
-- plain text password, or
-- JSON, for example `{ "password": "your-db-password" }`
-
-**KMS Encryption:** If you specify a KMS Key ID, all uploaded files to S3 will be encrypted using that key. You can use:
-
-- A customer-managed KMS key from your account (e.g., `arn:aws:kms:us-east-1:123456789012:key/12345678-1234-1234-1234-123456789012`)
-- A key from another account (cross-account key)
-- Leave empty to use S3 default encryption
-
-You can override parameter names with these runtime environment variables if needed:
-
-- `SSM_S3_BUCKET_NAME`
-- `SSM_RDS_HOST`
-- `SSM_RDS_PORT`
-- `SSM_RDS_USER`
-- `SSM_RDS_PASSWORD_SECRET_ID`
-- `SSM_RDS_DATABASE`
-- `SSM_KMS_KEY_ID`
-- `SSM_MAX_FILE_SIZE_BYTES`
-
-## 4) AWS Region Detection
-
-The app automatically detects the AWS region in this order:
-
-1. `AWS_REGION` environment variable
-2. `AWS_DEFAULT_REGION` environment variable
-3. EC2 instance metadata (when running on EC2)
-4. Defaults to `us-east-1`
-
-## 5) Run the App
+**View real-time logs:**
 
 ```bash
-npm run dev
+docker logs -f nodeapp
 ```
 
-or
+**Check container health:**
 
 ```bash
-npm start
+docker ps
+docker inspect nodeapp | grep -A 10 "Health"
 ```
 
-Then open `http://localhost:3000`.
+## Security Features
 
-## API Endpoints
+- No hardcoded credentials (AWS Secrets Manager)
+- IAM roles for secure AWS access
+- Non-root user in Docker container
+- HTTPS with SSL/TLS encryption
+- Security groups limiting access
+- Private subnet for database
+- Parameter Store for configuration management
 
-- `GET /api/health` — health check + DB check
-- `POST /api/contact` — accepts `multipart/form-data`
-  - fields: `fullName`, `email`, `subject`, `message`
-  - optional file field: `attachment`
+## Project Structure
 
-## Auto Table Creation
+```
+.
+├── server.js           # Main application entry point
+├── package.json        # Node.js dependencies
+├── Dockerfile          # Docker configuration
+├── .dockerignore       # Docker build exclusions
+├── public/             # Frontend static files
+│   └── index.html      # Contact form UI
+├── learn.md            # Detailed setup guide
+├── troubleshoot.md     # Error resolution guide
+└── DOCKER.md           # Docker deployment guide
+```
 
-On first valid form submission, the app runs:
+## Common Issues
 
-- `CREATE TABLE IF NOT EXISTS contact_submissions (...)`
+| Issue                      | Solution                                                        |
+| -------------------------- | --------------------------------------------------------------- |
+| 502 Bad Gateway            | Check if Docker container is running: `docker ps`               |
+| Port already in use        | Stop other services on port 3000: `docker stop nodeapp`         |
+| IAM permission denied      | Verify EC2 role has required permissions                        |
+| Database connection failed | Check RDS security group allows EC2 access                      |
+| File upload failed         | Verify S3 bucket name in Parameter Store has no trailing spaces |
 
-This removes manual table setup.
+## Updating the Application
 
-## IAM Requirements
+**Backend (Manual deployment):**
 
-Application credentials/role need:
+```bash
+# Pull latest code
+git pull origin main
 
-- `ssm:GetParameters` (for Parameter Store)
-- `secretsmanager:GetSecretValue` (for DB password)
-- `s3:PutObject` (for file uploads)
-- `kms:Decrypt` (if using encrypted Parameter Store values)
-- `kms:GenerateDataKey` and `kms:Decrypt` (if using KMS for S3 encryption)
-- RDS network/database access
+# Rebuild Docker image
+docker build -t nodeapp:1.0 .
+
+# Restart container
+docker stop nodeapp && docker rm nodeapp
+docker run -d -p 3000:3000 --restart unless-stopped --name nodeapp nodeapp:1.0
+```
+
+**Frontend (Automatic deployment):**
+
+```bash
+# Simply push changes to GitHub
+git add public/
+git commit -m "Update frontend"
+git push origin main
+
+# Amplify automatically detects changes and redeploys
+# No manual intervention needed!
+```
+
+## Live Demo
+
+- **Frontend:** https://frontend-contact-form.godwintechservices.com/
+- **Backend API:** https://backend-contact-form.godwintechservices.com/api/health
+
+## Author
+
+Innocent Godwin
+
+## License
+
+ISC
+
+## Acknowledgments
+
+- AWS Documentation
+- Node.js Community
+- Docker Community
+
+---
+
+**Note:** This project demonstrates full-stack AWS integration with security best practices. All sensitive credentials are managed through AWS Secrets Manager and Parameter Store, never hardcoded.
