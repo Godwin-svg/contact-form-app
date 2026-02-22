@@ -2,3 +2,11 @@ node_modules/
 .DS_Store
 *.log
 .env
+
+# Documentation files
+DOCKER.md
+learn.md
+troubleshoot.md
+
+# Package lock file
+package-lock.json
